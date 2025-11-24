@@ -1,0 +1,79 @@
+/* tRPC server context setup, base router, base procedure, protected procedure and middleware for Payload CMS integration */
+
+import { cache } from "react";
+import superjson from "superjson";
+import { getPayload } from "payload";
+
+import config from "@payload-config";
+import { initTRPC, TRPCError } from "@trpc/server";
+import { headers as getHeaders } from "next/headers";
+
+export const createTRPCContext = cache(async () => {
+  /**
+   * @see: https://trpc.io/docs/server/context
+   */
+  return { userId: "user_123" };
+});
+// Avoid exporting the entire t-object
+// since it's not very descriptive.
+// For instance, the use of a t variable
+// is common in i18n libraries.
+const t = initTRPC.create({
+  /**
+   * @see https://trpc.io/docs/server/data-transformers
+   */
+  transformer: superjson,
+});
+// Base router and procedure helpers
+export const createTRPCRouter = t.router;
+export const createCallerFactory = t.createCallerFactory;
+export const baseProcedure = t.procedure.use(async ({ next }) => {
+  const payload = await getPayload({ config });
+
+  return next({ ctx: { payload } });
+});
+
+/**
+ * A TRPC procedure middleware that ensures the user is authenticated.
+ *
+ * This middleware retrieves headers and validates the user's session
+ * using the provided authentication mechanism. If the user is not
+ * authenticated, it throws a `TRPCError` with the code "UNAUTHORIZED".
+ *
+ * Upon successful authentication, it augments the context with the
+ * authenticated user's session information and proceeds to the next
+ * middleware or resolver.
+ *
+ * @throws {TRPCError} If the user is not authenticated.
+ *
+ * @example
+ * Usage in a TRPC router
+ * const router = t.router({
+ *   secureEndpoint: protectedProcedure.query(() => {
+ *     return "This is a secure endpoint";
+ *   }),
+ * });
+ */
+export const protectedProcedure = baseProcedure.use(async ({ ctx, next }) => {
+  const headers = await getHeaders();
+  const session = await ctx.payload.auth({
+    headers,
+  });
+
+  if (!session.user) {
+    throw new TRPCError({
+      code: "UNAUTHORIZED",
+      message: "Not authenticated, Please sign in to continue.", // Access denied. Please log in to continue
+    });
+  }
+
+  return next({
+    ctx: {
+      ...ctx,
+      session: {
+        ...session,
+        user: session.user,
+      },
+    },
+  });
+});
