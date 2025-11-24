@@ -1,0 +1,141 @@
+"use client";
+
+/* calculates visible categories based on container width;
+  integrates CategoriesSidebar for overflow; manages hover and active state;
+  responsive layout for different screen sizes.
+*/
+
+import { useParams } from "next/navigation";
+import { ListFilterIcon } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+
+import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
+import { CategoriesGetManyOutput } from "@/modules/categories/types";
+
+import { CategoryDropdown } from "./category-dropdown";
+import { CategoriesSidebar } from "./categories-sidebar";
+
+interface Props {
+  data: CategoriesGetManyOutput;
+}
+
+export const Categories = ({ data }: Props) => {
+  const params = useParams();
+
+  const containerRef = useRef<HTMLDivElement>(null);
+  const measureRef = useRef<HTMLDivElement>(null);
+  const viewAllRef = useRef<HTMLDivElement>(null);
+
+  const [visibleCount, setVisibleCount] = useState(data.length);
+  const [isAnyHovered, setIsAnyHovered] = useState(false);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+
+  const categoryParam = params.category as string | undefined;
+  const activeCategory = categoryParam || "all";
+  // const activeCategory = "all";
+
+  const activeCategoryIndex = data.findIndex(
+    (category) => category.slug === activeCategory,
+  );
+
+  const isActiveCategoryHidden =
+    activeCategoryIndex >= visibleCount && activeCategoryIndex !== -1;
+
+  useEffect(() => {
+    const calculateVisible = () => {
+      if (!containerRef.current || !measureRef.current || !viewAllRef.current)
+        return;
+
+      const containerWidth = containerRef.current.offsetWidth;
+      const viewAllWidth = viewAllRef.current.offsetWidth;
+      const availableWidth = containerWidth - viewAllWidth;
+
+      const items = Array.from(measureRef.current.children);
+      let totalWidth = 0;
+      let visible = 0;
+
+      for (const item of items) {
+        const width = item.getBoundingClientRect().width;
+
+        if (totalWidth + width > availableWidth) break;
+        totalWidth += width;
+        visible++;
+      }
+
+      setVisibleCount(visible);
+    };
+
+    const resizeObserver = new ResizeObserver(calculateVisible);
+    if (containerRef.current) {
+      resizeObserver.observe(containerRef.current);
+    }
+    // Initial run
+    calculateVisible();
+    return () => resizeObserver.disconnect();
+  }, [data.length]);
+
+  return (
+    <div className="relative w-full">
+      {/* Categories sidebar */}
+      <CategoriesSidebar open={isSidebarOpen} onOpenChange={setIsSidebarOpen} />
+      {/*  testing: (app)/(home)/search-filters/Categories() page */}
+      {/* testing: {JSON.stringify(data, null, 2)} */}
+      {/*  */}
+
+      {/* Hidden div to measure all items */}
+      <div
+        ref={measureRef}
+        className="pointer-events-none absolute flex opacity-0"
+        style={{ position: "fixed", top: -9999, left: -9999 }}
+      >
+        {data.map((category) => (
+          <div key={category.id}>
+            <CategoryDropdown
+              category={category}
+              isActive={activeCategory === category.slug}
+              isNavigationHoverd={false}
+            />
+          </div>
+        ))}
+      </div>
+
+      {/* Visible items */}
+      <div
+        ref={containerRef}
+        className="flex flex-nowrap items-center"
+        onMouseEnter={() => setIsAnyHovered(true)}
+        onMouseLeave={() => setIsAnyHovered(false)}
+      >
+
+        {/* // TODO: Hardcode "All" btn  */}
+
+        {data.slice(0, visibleCount).map((category) => (
+          <div key={category.id}>
+            <CategoryDropdown
+              category={category}
+              isActive={activeCategory === category.slug}
+              isNavigationHoverd={isAnyHovered}
+            />
+          </div>
+        ))}
+
+        <div ref={viewAllRef} className="shrink-0">
+          <Button
+            variant="outline"
+            className={cn(
+              "hover:border-primary h-11 rounded-full border-transparent bg-transparent text-black hover:bg-white",
+              isActiveCategoryHidden &&
+                !isAnyHovered &&
+                "border-primary bg-white",
+            )}
+            onClick={() => setIsSidebarOpen(true)}
+          >
+            View All
+            <ListFilterIcon className="ml-2" />
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+};
